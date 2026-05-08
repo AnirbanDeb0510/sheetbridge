@@ -10,7 +10,8 @@ export async function parseCSV(
   options: ParseOptions = {}
 ): Promise<Array<Record<string, unknown>>> {
   return new Promise((resolve, reject) => {
-    Papa.parse(file, {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    Papa.parse(file as any, {
       header: options.header ?? true,
       skipEmptyLines: options.skipBlankRows ?? false,
       dynamicTyping: false,
