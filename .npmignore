@@ -1,0 +1,12 @@
+src/
+tests/
+coverage/
+.github/
+.gitignore
+tsconfig.json
+vitest.config.ts
+tsup.config.ts
+.eslintrc.json
+.prettierrc
+*.md
+!README.md
