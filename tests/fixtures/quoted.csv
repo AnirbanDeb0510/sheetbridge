@@ -1,0 +1,4 @@
+id,name,notes,active
+1,"Smith, Alice","She said ""hello""",true
+
+2,Bob,"  spaced  ",false

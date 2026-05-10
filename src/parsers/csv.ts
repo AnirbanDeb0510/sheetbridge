@@ -5,30 +5,45 @@
 import Papa from 'papaparse';
 import type { ParseOptions } from '../types';
 
-export async function parseCSV(
-  file: File | Blob,
-  options: ParseOptions = {}
-): Promise<Array<Record<string, unknown>>> {
+type CsvRow = Record<string, unknown> | Array<string | null>;
+
+export async function parseCSV(file: File | Blob, options: ParseOptions = {}): Promise<CsvRow[]> {
+  const csvText = await file.text();
+  const hasHeader = options.header ?? true;
+
   return new Promise((resolve, reject) => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    Papa.parse(file as any, {
-      header: options.header ?? true,
+    Papa.parse(csvText, {
+      header: hasHeader,
       skipEmptyLines: options.skipBlankRows ?? false,
       dynamicTyping: false,
       complete(results) {
-        let data = results.data as Array<Record<string, unknown>>;
+        let data = results.data as CsvRow[];
 
         if (options.maxRows) {
           data = data.slice(0, options.maxRows);
         }
 
-        if (options.columnMapping) {
+        if (options.trim) {
           data = data.map((row) => {
-            if (typeof row !== 'object') return row;
+            if (Array.isArray(row)) {
+              return row.map((value) => (typeof value === 'string' ? value.trim() : value));
+            }
+
+            const trimmed: Record<string, unknown> = {};
+            for (const [key, value] of Object.entries(row)) {
+              trimmed[key] = typeof value === 'string' ? value.trim() : value;
+            }
+            return trimmed;
+          });
+        }
+
+        if (options.columnMapping && hasHeader) {
+          data = data.map((row) => {
+            if (Array.isArray(row)) return row;
             const mapped: Record<string, unknown> = {};
             for (const [oldKey, newKey] of Object.entries(options.columnMapping!)) {
               if (oldKey in row) {
-                mapped[newKey] = (row as Record<string, unknown>)[oldKey];
+                mapped[newKey] = row[oldKey];
               }
             }
             return mapped;
@@ -37,7 +52,7 @@ export async function parseCSV(
 
         resolve(data);
       },
-      error(error) {
+      error(error: Error) {
         reject(new Error(`CSV parsing failed: ${error.message}`));
       },
     });

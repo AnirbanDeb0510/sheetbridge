@@ -2,19 +2,33 @@
  * XLSX Parser wrapper using read-excel-file
  */
 
-import readExcelFile from 'read-excel-file/browser';
+import readExcelFile from 'read-excel-file/universal';
 import type { ParseOptions, SheetData } from '../types';
 
 export async function parseXLSX(
   file: File | Blob | ArrayBuffer,
   options: ParseOptions = {}
 ): Promise<SheetData[]> {
-  const sheets: SheetData[] = [];
-
   try {
     const result = await readExcelFile(file);
+    const selectedSheets =
+      options.sheet === undefined
+        ? result
+        : typeof options.sheet === 'number'
+          ? [result[options.sheet]].filter(Boolean)
+          : result.filter((sheet) => sheet.sheet === options.sheet);
 
-    for (const sheet of result) {
+    if (options.sheet !== undefined && selectedSheets.length === 0) {
+      throw new Error(
+        typeof options.sheet === 'number'
+          ? `Sheet index ${options.sheet} was not found`
+          : `Sheet named "${options.sheet}" was not found`
+      );
+    }
+
+    const sheets: SheetData[] = [];
+
+    for (const sheet of selectedSheets) {
       let rows: Array<Record<string, unknown> | Array<string | number | boolean | null>> =
         sheet.data as Array<(string | number | boolean | null)[]>;
 
@@ -52,11 +66,6 @@ export async function parseXLSX(
         name: sheet.sheet || 'Sheet1',
         data: rows,
       });
-
-      // If specific sheet requested, return only that one
-      if (options.sheet !== undefined) {
-        break;
-      }
     }
 
     return sheets;
