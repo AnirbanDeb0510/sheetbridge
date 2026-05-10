@@ -6,10 +6,11 @@
 
 import type { ParseOptions, SheetData } from '../types';
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 export async function parseXLS(
-  file: File | Blob | ArrayBuffer | Buffer,
-  options?: ParseOptions
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  _file: File | Blob | ArrayBuffer | Buffer,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  _options?: ParseOptions
 ): Promise<SheetData[]> {
   // TODO: Implement BIFF8 parser
   // This will parse the binary OLE2/CFB container and extract BIFF8 records
