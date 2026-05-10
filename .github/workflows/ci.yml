@@ -33,5 +33,9 @@ jobs:
       - name: Run tests
         run: npm test
 
+      - name: Run browser tests (Chromium, CI)
+        if: matrix.node-version == '20.x'
+        run: npm run test:browser:ci
+
       - name: Build
         run: npm run build

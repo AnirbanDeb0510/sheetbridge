@@ -1,0 +1,3 @@
+name,age,ratio,birthDate,loginTime,active
+Alice,30,0.5,1994-03-24,2026-05-11 10:15:00,true
+Bob,25,0.25,1990-08-02,2026-05-10 08:30:00,false
