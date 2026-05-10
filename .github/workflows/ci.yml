@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        node-version: [18.x, 20.x]
+        node-version: [20.x]
     steps:
       - uses: actions/checkout@v4.2.2
 
@@ -34,7 +34,6 @@ jobs:
         run: npm test
 
       - name: Run browser tests (Chromium, CI)
-        if: matrix.node-version == '20.x'
         run: npm run test:browser:ci
 
       - name: Build
