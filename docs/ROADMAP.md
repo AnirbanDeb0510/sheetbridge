@@ -1,94 +1,71 @@
 # SheetBridge Development Roadmap
 
-## Status Snapshot
+## Current Status
 
-- Package scaffold and tooling: Done
-- CI workflow and branch protection setup: Done
-- Unified parser entrypoint: Done
-- CSV support (PapaParse wrapper): Done (baseline)
-- XLSX support (read-excel-file wrapper): Done (baseline)
-- XLS support: Not done (placeholder)
+- Core package/tooling: Done
+- Unified parser API (`parseFile`, `parseFileFlat`): Done
+- CSV support: Done
+- XLSX support: Done
+- XLS support (BIFF8 v1 scope): Implemented and tested
 
-## What Is Done
+## Remaining for v1.0
 
-### Foundation
+### 1) Documentation finalization
 
-- TypeScript project setup (`tsup`, `vitest`, ESLint, Prettier)
-- Build artifacts for ESM/CJS + type declarations
-- GitHub workflows for CI/publish
-- CODEOWNERS and protected PR flow
+- Keep README and architecture docs aligned with shipped behavior.
+- Keep XLS feature boundaries and unsupported behavior explicit in public docs.
 
-### Core Parsing Surface
+### 2) Feature manifest for release docs
 
-- Input format detection
-- Unified `parseFile()` and `parseFileFlat()` API
-- Shared types for result and options
+- Document shipped XLS feature coverage and parser boundaries.
+- Include record coverage, option behavior, and failure semantics.
 
-### CSV Baseline
+### 3) Release validation checklist
 
-- Parse uploaded CSV to JSON row objects
-- Header handling
-- Blank row skipping
-- Column mapping
-- Max row limiting
-- Fixture coverage for mixed-text CSV rows and quoted edge cases
+- Provide one command or scripted sequence that validates:
+  - type-check
+  - unit/integration tests
+  - browser tests
+  - build
+- Confirm CI stability for Node 20 and browser jobs.
 
-### XLSX Baseline
+### 4) Publish preparation
 
-- Parse workbook sheets to rows
-- Optional header-object conversion
-- Trim/mapping support
-- Basic sheet selection behavior
-- Fixture coverage for multi-sheet workbooks, dates, datetimes, percentages, and fractions
+- Changelog entries for XLS introduction scope and caveats.
+- Version bump and release notes.
+- Final package sanity check (dist files/types/exports).
 
-## What Is Left
+## Recommended After v1.0 (v1.x)
 
-### Priority 1 (Must have for v1.0)
+1. Typed public error model.
 
-1. Implement XLS parser (`src/parsers/xls.ts`)
-2. Add robust XLS fixture coverage
-3. Add unit and integration tests for XLS edge cases
-4. Finalize API docs and usage examples
+- Standardize parser-facing error codes for invalid format, malformed binary, unsupported feature, bounds violations.
 
-### Priority 2 (Strongly recommended)
+2. Sheet metadata enhancements.
 
-1. Improve error model with typed error codes
-2. Add explicit metadata fields per sheet
-3. Add performance guardrails for large files
-4. Add browser compatibility notes in README
+- Include optional metadata per sheet (row/column counts, parse warnings, inferred formats).
 
-### Priority 3 (Post v1.0)
+3. Performance guardrails.
 
-1. Optional Web Worker helper for non-blocking parse
-2. Optional schema validation/transformation hook
-3. Optional streaming/chunk adapters where feasible
+- Add explicit limits and documented behavior for very large workbooks and shared string tables.
 
-## Suggested Milestones
+## Post v1.0
 
-### Milestone A: Stabilize Current Parsers
-
-- **Completed**: Tighten CSV/XLSX type safety
-- **Completed**: Ensure options behave consistently
-- **Completed**: Add tests for detection, mapping, trim, maxRows, quoted CSV, multi-sheet XLSX, and sheet selection
-
-### Milestone B: Build XLS Parser
-
-- Implement BIFF8 core reader
-- Extract sheets and cell values
-- Match existing unified output shape
-
-### Milestone C: Release Candidate
-
-- Final docs
-- Coverage threshold in CI
-- Versioning and changelog
-- Tag and publish `v1.0.0`
+1. Web Worker helper for non-blocking browser parsing.
+2. Optional schema validation/transformation hook.
+3. Optional streaming/chunk adapters where feasible.
 
 ## Definition of Done for v1.0
 
-- `csv`, `xlsx`, and `xls` all parse through same public API
-- Same options behave consistently across formats
-- CI passes on supported Node matrix
-- Tests cover core and edge behavior
-- README has quick-start + option reference + limits
-- Package published under MIT with clean install path
+- [x] CSV, XLSX, and XLS parse through the same public API.
+- [x] Option behavior is documented and aligned across formats within v1 scope.
+- [x] Tests cover core + hostile parsing paths (Node + browser coverage present).
+- [x] README includes quick start, option examples, and compact options reference.
+- [ ] CI passes on supported Node/browser matrix with release-gate confidence.
+- [ ] Changelog, version bump, and release notes are finalized.
+- [ ] Package is published with clean install/build path.
+
+## Notes
+
+- XLS parser data flow is maintained in `docs/ARCHITECTURE.md`.
+- XLS v1 scope/limits and security guardrails are maintained in `README.md`.

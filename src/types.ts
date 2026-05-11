@@ -58,7 +58,7 @@ export interface SheetData {
   /**
    * Array of rows. Each row is an array of values or an object if header=true
    */
-  data: Array<Record<string, unknown> | Array<string | number | boolean | null>>;
+  data: Array<Record<string, unknown> | Array<string | number | boolean | Date | null>>;
 }
 
 export interface ParseResult {
