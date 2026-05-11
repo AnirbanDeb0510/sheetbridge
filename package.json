@@ -6,7 +6,7 @@
   "author": "Anirban Deb <anirbandeb0510@gmail.com>",
   "repository": {
     "type": "git",
-    "url": "https://github.com/AnirbanDeb0510/sheetbridge.git"
+    "url": "git+https://github.com/AnirbanDeb0510/sheetbridge.git"
   },
   "homepage": "https://github.com/AnirbanDeb0510/sheetbridge#readme",
   "keywords": [
