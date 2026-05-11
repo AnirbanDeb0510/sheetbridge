@@ -12,7 +12,7 @@ UI/File Upload
     -> format detection (by filename/mime)
       -> CSV  -> parseCSV (PapaParse)
       -> XLSX -> parseXLSX (read-excel-file)
-      -> XLS  -> parseXLS (placeholder today)
+      -> XLS  -> parseXLS (BIFF8 parser)
     -> normalize sheet output
   -> ParseResult { sheets, metadata }
 ```
@@ -38,8 +38,22 @@ UI/File Upload
   - Applies trim/mapping and sheet filtering.
 
 - `src/parsers/xls.ts`
-  - Placeholder for BIFF8/OLE implementation.
-  - Planned for v1.0 before release.
+  - Orchestrates BIFF8 parsing and unified option handling.
+
+- `src/parsers/xls/cfb.ts`
+  - Parses OLE2/CFB container and stream allocation tables.
+  - Resolves workbook stream bytes safely with bounds checks.
+
+- `src/parsers/xls/biff-records.ts`
+  - Iterates BIFF records from workbook stream.
+  - Enforces record-size and offset safety checks.
+
+- `src/parsers/xls/workbook-globals.ts`
+  - Parses workbook globals (sheet metadata, shared strings, formats).
+
+- `src/parsers/xls/worksheet.ts`
+  - Parses supported worksheet cell records.
+  - Normalizes values into string/number/boolean/date-compatible outputs.
 
 - `src/types.ts`
   - Shared types for API contracts and parser output.
@@ -55,8 +69,9 @@ UI/File Upload
    - Unsupported formats fail early with explicit error.
 
 3. Parser execution
-   - CSV/XLSX parser executes and returns rows or row-objects.
-   - XLS parser path currently throws not-implemented.
+
+- CSV/XLSX/XLS parser executes and returns rows or row-objects.
+- XLS path runs BIFF8 parser flow and applies same public options.
 
 4. Normalization
    - Data is wrapped into unified `SheetData[]` shape:
@@ -114,6 +129,36 @@ UI/File Upload
 
 ## Planned XLS Approach
 
-- Implement BIFF8 parser with spec-guided record reading.
-- Keep same output contract as CSV/XLSX parser.
-- Reuse option semantics (`header`, `sheet`, `maxRows`, etc.).
+- Implemented: BIFF8 parser with spec-guided record reading.
+- Implemented: same output contract as CSV/XLSX parser.
+- Implemented: option semantics (`header`, `sheet`, `maxRows`, `trim`, `columnMapping`).
+
+## XLS Parser Data Flow (Implemented)
+
+1. Input to bytes
+
+- `parseFile()` accepts browser/node input and resolves byte buffer.
+
+2. Container extraction
+
+- `cfb.ts` parses OLE2/CFB header, FAT/DIFAT chains, and directory entries.
+- Workbook stream is extracted with stream-size and sector-chain bounds checks.
+
+3. BIFF traversal
+
+- `biff-records.ts` walks record headers and payloads.
+- Invalid lengths, offsets, or impossible record boundaries fail fast.
+
+4. Workbook globals
+
+- `workbook-globals.ts` captures sheet list, shared string table, and format metadata.
+
+5. Worksheet decoding
+
+- `worksheet.ts` decodes supported cell records (`LABEL`, `LABELSST`, `NUMBER`, `RK`, `MULRK`, `BOOLERR`).
+- Values are normalized into API-compatible typed cells.
+
+6. Option application and output
+
+- `xls.ts` applies `header`, `trim`, `maxRows`, `columnMapping`, and `sheet` selection.
+- Output is emitted as unified `ParseResult` with per-sheet data + metadata.

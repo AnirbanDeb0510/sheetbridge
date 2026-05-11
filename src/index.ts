@@ -106,7 +106,7 @@ export async function parseFile(file: FileInput, options: ParseOptions = {}): Pr
 export async function parseFileFlat(
   file: FileInput,
   options: ParseOptions = {}
-): Promise<Array<Record<string, unknown> | Array<string | number | boolean | null>>> {
+): Promise<Array<Record<string, unknown> | Array<string | number | boolean | Date | null>>> {
   const result = await parseFile(file, options);
   // Combine all sheets into a single flat array
   return result.sheets.flatMap((sheet) => sheet.data);

@@ -261,4 +261,70 @@ describe('Parser integration (fixtures)', () => {
       })
     ).rejects.toThrow('Sheet index 99 was not found');
   });
+
+  it('parses XLS fixture to JSON rows with multiple sheets', async () => {
+    const file = readFixtureAsFile('sample.xls', 'application/vnd.ms-excel');
+
+    const result = await parseFile(file, {
+      header: true,
+      trim: true,
+    });
+
+    expect(result.metadata.format).toBe('xls');
+    expect(result.metadata.sheetCount).toBe(2);
+    expect(result.sheets[0].name).toBe('People');
+    expect(result.sheets[1].name).toBe('Metrics');
+    expect(result.sheets[0].data).toHaveLength(2);
+
+    const firstRow = result.sheets[0].data[0] as Record<string, unknown>;
+    expect(firstRow.name).toBe('Alice');
+    expect(firstRow.age).toBe(30);
+    expect(firstRow.ratio).toBe(0.5);
+    expect(firstRow.birthDate).toBeInstanceOf(Date);
+    expect(firstRow.loginTime).toBeInstanceOf(Date);
+    expect(firstRow.active).toBe(1);
+  });
+
+  it('reads a single XLS sheet by name and supports column mapping', async () => {
+    const file = readFixtureAsFile('sample.xls', 'application/vnd.ms-excel');
+
+    const result = await parseFile(file, {
+      header: true,
+      sheet: 'People',
+      maxRows: 2,
+      columnMapping: {
+        name: 'personName',
+        age: 'yearsOld',
+      },
+    });
+
+    expect(result.sheets).toHaveLength(1);
+    expect(result.sheets[0].name).toBe('People');
+    expect(result.sheets[0].data).toHaveLength(1);
+
+    const firstRow = result.sheets[0].data[0] as Record<string, unknown>;
+    expect(firstRow.personName).toBe('Alice');
+    expect(firstRow.yearsOld).toBe(30);
+  });
+
+  it('throws a clear error when a requested XLS sheet is missing', async () => {
+    const file = readFixtureAsFile('sample.xls', 'application/vnd.ms-excel');
+
+    await expect(
+      parseFile(file, {
+        header: true,
+        sheet: 'MissingXlsSheet',
+      })
+    ).rejects.toThrow('Sheet named "MissingXlsSheet" was not found');
+  });
+
+  it('throws a clear error for malformed XLS files', async () => {
+    const malformed = new File([new Uint8Array([1, 2, 3, 4, 5])], 'malformed.xls', {
+      type: 'application/vnd.ms-excel',
+    });
+
+    await expect(parseFile(malformed, { header: true })).rejects.toThrow(
+      'too small to contain a valid CFB header'
+    );
+  });
 });

@@ -10,6 +10,7 @@ export async function parseXLSX(
   options: ParseOptions = {}
 ): Promise<SheetData[]> {
   try {
+    const hasHeader = options.header ?? true;
     const result = await readExcelFile(file);
     const selectedSheets =
       options.sheet === undefined
@@ -43,14 +44,15 @@ export async function parseXLSX(
       }
 
       // Convert to objects if header is enabled
-      if (options.header && rows.length > 0) {
+      if (hasHeader && rows.length > 0) {
         const headers = rows[0] as Array<string | number>;
         const dataRows = (rows as Array<(string | number | boolean | null)[]>)
           .slice(1)
           .map((row) => {
-            const obj: Record<string, unknown> = {};
+            const obj: Record<string, unknown> = Object.create(null) as Record<string, unknown>;
             headers.forEach((header, index: number) => {
-              const key = options.columnMapping?.[header] ?? header;
+              const rawKey = options.columnMapping?.[String(header)] ?? header;
+              const key = String(rawKey);
               obj[key] = options.trim
                 ? typeof row[index] === 'string'
                   ? (row[index] as string)?.trim()
