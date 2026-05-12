@@ -2,6 +2,26 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.1] - 2026-05-12
+
+### Fixed
+
+- Fixed XLS shared-string (SST) decoding across BIFF8 `CONTINUE` records.
+- Resolved failures where some `.xls` files could throw `Unicode string data exceeds payload bounds` due to record-boundary handling.
+- Updated workbook globals parsing to correctly handle continuation record transitions and continuation encoding flags while reading split shared strings.
+
+### Tests
+
+- Added targeted XLS SST/CONTINUE regression tests for:
+  - Unicode strings split across SST/CONTINUE boundaries.
+  - Continuation encoding flag transitions.
+  - Malformed split-string payload error paths.
+- Ran full lint and test suite successfully (`40/40` tests passing).
+
+### Compatibility
+
+- Re-validated in Angular smoke app runtime by uploading and parsing `.xls` fixture successfully.
+
 ## [1.0.0] - 2026-05-11
 
 ### Added
