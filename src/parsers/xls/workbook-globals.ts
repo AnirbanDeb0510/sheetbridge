@@ -70,81 +70,204 @@ function parseBoundSheet(payload: Uint8Array): WorkbookSheetRef {
   };
 }
 
-function decodeString(bytes: Uint8Array, isUnicode: boolean): string {
-  if (!isUnicode) {
-    return decodeAscii(bytes);
+// Helper to read bytes across SST/CONTINUE records, handling CONTINUE encoding flag transitions
+class RecordStream {
+  public records: Uint8Array[];
+  public recordIndex: number;
+  public offset: number;
+  public encodingFlag: number | null;
+
+  constructor(records: Uint8Array[], initialEncodingFlag: number | null = null) {
+    this.records = records;
+    this.recordIndex = 0;
+    this.offset = 0;
+    this.encodingFlag = initialEncodingFlag;
   }
 
-  let result = '';
-  for (let index = 0; index + 1 < bytes.length; index += 2) {
-    const codeUnit = bytes[index] | (bytes[index + 1] << 8);
-    result += String.fromCharCode(codeUnit);
+  // Read n bytes, crossing records as needed
+  read(n: number): Uint8Array {
+    const out = new Uint8Array(n);
+    let outOffset = 0;
+    while (outOffset < n) {
+      if (this.recordIndex >= this.records.length) {
+        throw new XlsParserError('MALFORMED_BINARY', 'Unexpected end of SST/CONTINUE records');
+      }
+      const rec = this.records[this.recordIndex];
+      const remain = rec.length - this.offset;
+      if (remain === 0) {
+        this.nextRecord();
+        continue;
+      }
+      const toCopy = Math.min(n - outOffset, remain);
+      out.set(rec.subarray(this.offset, this.offset + toCopy), outOffset);
+      this.offset += toCopy;
+      outOffset += toCopy;
+    }
+    return out;
   }
-  return result;
+
+  // Read a single byte
+  readByte(): number {
+    return this.read(1)[0];
+  }
+
+  // Peek at the next byte
+  peekByte(): number {
+    if (this.recordIndex >= this.records.length) {
+      throw new XlsParserError('MALFORMED_BINARY', 'Unexpected end of SST/CONTINUE records');
+    }
+    const rec = this.records[this.recordIndex];
+    if (this.offset >= rec.length) {
+      this.nextRecord();
+      return this.peekByte();
+    }
+    return rec[this.offset];
+  }
+
+  // Move to next record, handling CONTINUE encoding flag
+  public nextRecord() {
+    this.recordIndex++;
+    this.offset = 0;
+    // If the new record starts with an encoding flag, update it and advance offset
+    if (this.recordIndex < this.records.length) {
+      const rec = this.records[this.recordIndex];
+      if (rec.length > 0) {
+        this.encodingFlag = rec[0];
+        this.offset = 1;
+      }
+    }
+  }
+
+  // Read a Unicode/compressed string of given charCount, using current encodingFlag
+  readString(charCount: number, isUnicode: boolean): string {
+    let bytesNeeded = charCount * (isUnicode ? 2 : 1);
+    const chars: number[] = [];
+    while (bytesNeeded > 0) {
+      if (this.recordIndex >= this.records.length) {
+        throw new XlsParserError('MALFORMED_BINARY', 'Unexpected end of SST/CONTINUE records');
+      }
+      const rec = this.records[this.recordIndex];
+      const remain = rec.length - this.offset;
+      if (remain === 0) {
+        this.nextRecord();
+        // After CONTINUE, encodingFlag may change
+        isUnicode = this.encodingFlag ? (this.encodingFlag & 0x01) === 0x01 : isUnicode;
+        continue;
+      }
+      const toRead = Math.min(bytesNeeded, remain);
+      if (isUnicode) {
+        for (let i = 0; i < toRead; i += 2) {
+          if (this.offset + i + 1 >= rec.length) break;
+          const codeUnit = rec[this.offset + i] | (rec[this.offset + i + 1] << 8);
+          chars.push(codeUnit);
+        }
+      } else {
+        for (let i = 0; i < toRead; ++i) {
+          chars.push(rec[this.offset + i]);
+        }
+      }
+      this.offset += toRead;
+      bytesNeeded -= toRead;
+    }
+    return isUnicode ? String.fromCharCode(...chars) : String.fromCharCode(...chars);
+  }
+
+  // Read n bytes as a Uint8Array (for rich text/phonetic blocks)
+  readRaw(n: number): Uint8Array {
+    return this.read(n);
+  }
+
+  atEnd(): boolean {
+    return this.recordIndex >= this.records.length;
+  }
 }
 
 interface ParsedUnicodeString {
   value: string;
-  bytesConsumed: number;
 }
 
-function parseUnicodeString(bytes: Uint8Array, offset: number): ParsedUnicodeString {
-  if (offset + 3 > bytes.length) {
-    throw new XlsParserError('MALFORMED_BINARY', 'Unicode string header exceeds payload bounds');
-  }
-
-  const view = new DataView(bytes.buffer, bytes.byteOffset + offset, bytes.byteLength - offset);
-  const charCount = view.getUint16(0, true);
-  const flags = view.getUint8(2);
-  const isUnicode = (flags & 0x01) === 0x01;
+// Parse a Unicode string from a RecordStream, handling CONTINUE and encoding flag transitions
+function parseUnicodeStringFromStream(stream: RecordStream): ParsedUnicodeString {
+  // Header: 2 bytes charCount, 1 byte flags
+  const charCount = stream.read(2);
+  const charCountVal = charCount[0] | (charCount[1] << 8);
+  const flags = stream.readByte();
+  let isUnicode = (flags & 0x01) === 0x01;
   const hasRichText = (flags & 0x08) === 0x08;
   const hasPhonetic = (flags & 0x04) === 0x04;
 
-  let cursor = offset + 3;
   let richTextRunCount = 0;
   let phoneticSize = 0;
-
   if (hasRichText) {
-    if (cursor + 2 > bytes.length) {
-      throw new XlsParserError('MALFORMED_BINARY', 'Rich text count exceeds payload bounds');
-    }
-    richTextRunCount = new DataView(bytes.buffer, bytes.byteOffset + cursor, 2).getUint16(0, true);
-    cursor += 2;
+    const richTextBytes = stream.read(2);
+    richTextRunCount = richTextBytes[0] | (richTextBytes[1] << 8);
   }
-
   if (hasPhonetic) {
-    if (cursor + 4 > bytes.length) {
-      throw new XlsParserError('MALFORMED_BINARY', 'Phonetic size exceeds payload bounds');
+    const phoneticBytes = stream.read(4);
+    phoneticSize =
+      phoneticBytes[0] |
+      (phoneticBytes[1] << 8) |
+      (phoneticBytes[2] << 16) |
+      (phoneticBytes[3] << 24);
+  }
+
+  // Read the string, handling CONTINUE/encoding flag
+  let value = '';
+  let charsRemaining = charCountVal;
+  while (charsRemaining > 0) {
+    // Determine how many bytes are left in this record
+    if (stream.atEnd()) {
+      throw new XlsParserError(
+        'MALFORMED_BINARY',
+        'Unexpected end of SST/CONTINUE records while reading string'
+      );
     }
-    phoneticSize = new DataView(bytes.buffer, bytes.byteOffset + cursor, 4).getUint32(0, true);
-    cursor += 4;
+    // Read as many chars as possible in this record
+    const rec = stream.records[stream.recordIndex];
+    const off = stream.offset;
+    const remain = rec.length - off;
+    if (remain === 0) {
+      stream.nextRecord();
+      // After CONTINUE, encodingFlag may change
+      isUnicode = stream.encodingFlag ? (stream.encodingFlag & 0x01) === 0x01 : isUnicode;
+      continue;
+    }
+    let charsInThisRecord = isUnicode ? Math.floor(remain / 2) : remain;
+    charsInThisRecord = Math.min(charsInThisRecord, charsRemaining);
+    if (charsInThisRecord === 0) {
+      stream.nextRecord();
+      isUnicode = stream.encodingFlag ? (stream.encodingFlag & 0x01) === 0x01 : isUnicode;
+      continue;
+    }
+    if (isUnicode) {
+      for (let i = 0; i < charsInThisRecord; ++i) {
+        if (stream.offset + 1 >= rec.length) break;
+        const codeUnit = rec[stream.offset] | (rec[stream.offset + 1] << 8);
+        value += String.fromCharCode(codeUnit);
+        stream.offset += 2;
+      }
+    } else {
+      for (let i = 0; i < charsInThisRecord; ++i) {
+        value += String.fromCharCode(rec[stream.offset]);
+        stream.offset += 1;
+      }
+    }
+    charsRemaining -= charsInThisRecord;
   }
 
-  const textByteLength = charCount * (isUnicode ? 2 : 1);
-  const textEnd = cursor + textByteLength;
-  if (textEnd > bytes.length) {
-    throw new XlsParserError('MALFORMED_BINARY', 'Unicode string data exceeds payload bounds');
+  // Rich text runs (4 bytes each)
+  if (richTextRunCount > 0) {
+    stream.readRaw(richTextRunCount * 4);
+  }
+  // Phonetic block
+  if (phoneticSize > 0) {
+    stream.readRaw(phoneticSize);
   }
 
-  const value = decodeString(bytes.subarray(cursor, textEnd), isUnicode);
-  cursor = textEnd;
-
-  const richTextBytes = richTextRunCount * 4;
-  if (cursor + richTextBytes + phoneticSize > bytes.length) {
-    throw new XlsParserError(
-      'MALFORMED_BINARY',
-      'Unicode string extension data exceeds payload bounds'
-    );
-  }
-  cursor += richTextBytes + phoneticSize;
-
-  return {
-    value,
-    bytesConsumed: cursor - offset,
-  };
+  return { value };
 }
 
-function parseSstStringsFromRecords(
+export function parseSstStringsFromRecords(
   records: Array<{ id: number; payload: Uint8Array }>,
   startIndex: number
 ): {
@@ -169,6 +292,7 @@ function parseSstStringsFromRecords(
     );
   }
 
+  // Gather all SST and CONTINUE payloads (excluding SST header)
   const chunks: Uint8Array[] = [sstRecord.payload.subarray(8)];
   let endIndex = startIndex;
   while (endIndex + 1 < records.length && records[endIndex + 1].id === BIFF.CONTINUE) {
@@ -176,27 +300,12 @@ function parseSstStringsFromRecords(
     chunks.push(records[endIndex].payload);
   }
 
-  const totalLength = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
-  const joined = new Uint8Array(totalLength);
-  let joinedOffset = 0;
-  for (const chunk of chunks) {
-    joined.set(chunk, joinedOffset);
-    joinedOffset += chunk.length;
-  }
-
+  // Use RecordStream to parse strings
+  const stream = new RecordStream(chunks);
   const strings: string[] = [];
-  let cursor = 0;
-  while (strings.length < uniqueStrings && cursor < joined.length) {
-    const parsed = parseUnicodeString(joined, cursor);
+  for (let i = 0; i < uniqueStrings; ++i) {
+    const parsed = parseUnicodeStringFromStream(stream);
     strings.push(parsed.value);
-    cursor += parsed.bytesConsumed;
-  }
-
-  if (strings.length < uniqueStrings) {
-    throw new XlsParserError(
-      'MALFORMED_BINARY',
-      `SST decoding ended early: expected ${uniqueStrings}, parsed ${strings.length}`
-    );
   }
 
   return { strings, endIndex };
@@ -209,8 +318,10 @@ function parseFormatRecord(payload: Uint8Array): { formatIndex: number; format: 
 
   const view = new DataView(payload.buffer, payload.byteOffset, payload.byteLength);
   const formatIndex = view.getUint16(0, true);
+  // FORMAT record string is always a single segment, so we can use a RecordStream with one chunk
   const stringBytes = payload.subarray(2);
-  const parsed = parseUnicodeString(stringBytes, 0);
+  const stream = new RecordStream([stringBytes]);
+  const parsed = parseUnicodeStringFromStream(stream);
 
   return {
     formatIndex,
