@@ -1,6 +1,6 @@
 {
   "name": "sheetbridge",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "A unified, type-safe TypeScript library to parse CSV, XLS, and XLSX files to JSON in the browser",
   "license": "MIT",
   "author": "Anirban Deb <anirbandeb0510@gmail.com>",
