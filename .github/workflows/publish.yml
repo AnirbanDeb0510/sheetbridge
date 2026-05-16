@@ -34,9 +34,6 @@ jobs:
 
       - name: Build
         run: npm run build
-      
-      - name: Check npm login
-        run: npm whoami
 
       - name: Verify version is not already published
         shell: bash
