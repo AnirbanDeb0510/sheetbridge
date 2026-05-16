@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.2] - 2026-05-16
+
+### Fixed
+
+- Corrected BIFF record payload limit from 8192 to BIFF8-compliant 8224 bytes (`0x2020`) to avoid rejecting valid large records (notably SST-heavy workbooks).
+- Hardened SST/`CONTINUE` decoding logic to consume continuation encoding flags only when continuing character data, preventing boundary desynchronization for rich-text/phonetic continuation segments.
+- Improved malformed `CONTINUE` error handling with clearer diagnostics for missing string continuation flag bytes.
+
+### Tests
+
+- Added chained `SST`/`CONTINUE` stress coverage with encoding flips and trailing rich-text/phonetic payload continuation.
+- Added complex 4-sheet `.xls` integration fixture coverage (sparse table sheet, wide sheet up to `CR`, and instruction-style sheets) to better represent production-like files.
+- Re-ran parser test coverage after fixes and validations.
+
 ## [1.0.1] - 2026-05-12
 
 ### Fixed
