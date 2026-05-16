@@ -5,13 +5,12 @@ on:
     tags:
       - 'v*'
 
-permissions:
-  contents: read
-  id-token: write
-
 jobs:
   publish:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - uses: actions/checkout@v4.2.2
 
@@ -37,5 +36,33 @@ jobs:
       - name: Build
         run: npm run build
 
-      - name: Publish to npm
-        run: npm publish --access public
+      - name: Verify version is not already published
+        shell: bash
+        run: |
+          set -euo pipefail
+          PKG_NAME="$(node -p "require('./package.json').name")"
+          PKG_VERSION="$(node -p "require('./package.json').version")"
+          PUBLISHED_VERSION="$(npm view "$PKG_NAME" version 2>/dev/null || true)"
+
+          echo "Package: $PKG_NAME"
+          echo "Local version: $PKG_VERSION"
+          echo "Published version: ${PUBLISHED_VERSION:-<none>}"
+
+          if [[ "$PUBLISHED_VERSION" == "$PKG_VERSION" ]]; then
+            echo "Version $PKG_VERSION is already published. Bump package.json version before tagging/publishing."
+            exit 1
+          fi
+
+      - name: Publish preflight (trusted publishing)
+        shell: bash
+        run: |
+          set -euo pipefail
+          PKG_NAME="$(node -p "require('./package.json').name")"
+          npm --version
+          npm view "$PKG_NAME" name version --json
+
+      - name: Publish to npm (trusted publishing)
+        shell: bash
+        env:
+          NODE_AUTH_TOKEN: ''
+        run: npm publish --provenance --access public

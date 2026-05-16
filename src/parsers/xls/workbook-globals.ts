@@ -75,13 +75,35 @@ class RecordStream {
   public records: Uint8Array[];
   public recordIndex: number;
   public offset: number;
-  public encodingFlag: number | null;
 
-  constructor(records: Uint8Array[], initialEncodingFlag: number | null = null) {
+  constructor(records: Uint8Array[]) {
     this.records = records;
     this.recordIndex = 0;
     this.offset = 0;
-    this.encodingFlag = initialEncodingFlag;
+  }
+
+  private moveToNextRecord(consumeEncodingFlag: boolean): number | null {
+    this.recordIndex += 1;
+    this.offset = 0;
+
+    if (this.recordIndex >= this.records.length) {
+      return null;
+    }
+
+    if (!consumeEncodingFlag) {
+      return null;
+    }
+
+    const rec = this.records[this.recordIndex];
+    if (rec.length === 0) {
+      throw new XlsParserError(
+        'MALFORMED_BINARY',
+        'CONTINUE record is missing string continuation flag byte'
+      );
+    }
+
+    this.offset = 1;
+    return rec[0];
   }
 
   // Read n bytes, crossing records as needed
@@ -95,7 +117,10 @@ class RecordStream {
       const rec = this.records[this.recordIndex];
       const remain = rec.length - this.offset;
       if (remain === 0) {
-        this.nextRecord();
+        const next = this.moveToNextRecord(false);
+        if (next === null && this.recordIndex >= this.records.length) {
+          throw new XlsParserError('MALFORMED_BINARY', 'Unexpected end of SST/CONTINUE records');
+        }
         continue;
       }
       const toCopy = Math.min(n - outOffset, remain);
@@ -118,58 +143,26 @@ class RecordStream {
     }
     const rec = this.records[this.recordIndex];
     if (this.offset >= rec.length) {
-      this.nextRecord();
+      const next = this.moveToNextRecord(false);
+      if (next === null && this.recordIndex >= this.records.length) {
+        throw new XlsParserError('MALFORMED_BINARY', 'Unexpected end of SST/CONTINUE records');
+      }
       return this.peekByte();
     }
     return rec[this.offset];
   }
 
-  // Move to next record, handling CONTINUE encoding flag
-  public nextRecord() {
-    this.recordIndex++;
-    this.offset = 0;
-    // If the new record starts with an encoding flag, update it and advance offset
-    if (this.recordIndex < this.records.length) {
-      const rec = this.records[this.recordIndex];
-      if (rec.length > 0) {
-        this.encodingFlag = rec[0];
-        this.offset = 1;
-      }
+  // Move to next record while continuing string character data.
+  // In this mode BIFF8 CONTINUE starts with a one-byte encoding flag.
+  public nextRecordForStringContinuation(): number {
+    const flag = this.moveToNextRecord(true);
+    if (flag === null) {
+      throw new XlsParserError(
+        'MALFORMED_BINARY',
+        'Unexpected end of SST/CONTINUE records while reading string'
+      );
     }
-  }
-
-  // Read a Unicode/compressed string of given charCount, using current encodingFlag
-  readString(charCount: number, isUnicode: boolean): string {
-    let bytesNeeded = charCount * (isUnicode ? 2 : 1);
-    const chars: number[] = [];
-    while (bytesNeeded > 0) {
-      if (this.recordIndex >= this.records.length) {
-        throw new XlsParserError('MALFORMED_BINARY', 'Unexpected end of SST/CONTINUE records');
-      }
-      const rec = this.records[this.recordIndex];
-      const remain = rec.length - this.offset;
-      if (remain === 0) {
-        this.nextRecord();
-        // After CONTINUE, encodingFlag may change
-        isUnicode = this.encodingFlag ? (this.encodingFlag & 0x01) === 0x01 : isUnicode;
-        continue;
-      }
-      const toRead = Math.min(bytesNeeded, remain);
-      if (isUnicode) {
-        for (let i = 0; i < toRead; i += 2) {
-          if (this.offset + i + 1 >= rec.length) break;
-          const codeUnit = rec[this.offset + i] | (rec[this.offset + i + 1] << 8);
-          chars.push(codeUnit);
-        }
-      } else {
-        for (let i = 0; i < toRead; ++i) {
-          chars.push(rec[this.offset + i]);
-        }
-      }
-      this.offset += toRead;
-      bytesNeeded -= toRead;
-    }
-    return isUnicode ? String.fromCharCode(...chars) : String.fromCharCode(...chars);
+    return flag;
   }
 
   // Read n bytes as a Uint8Array (for rich text/phonetic blocks)
@@ -227,16 +220,15 @@ function parseUnicodeStringFromStream(stream: RecordStream): ParsedUnicodeString
     const off = stream.offset;
     const remain = rec.length - off;
     if (remain === 0) {
-      stream.nextRecord();
-      // After CONTINUE, encodingFlag may change
-      isUnicode = stream.encodingFlag ? (stream.encodingFlag & 0x01) === 0x01 : isUnicode;
+      const flag = stream.nextRecordForStringContinuation();
+      isUnicode = (flag & 0x01) === 0x01;
       continue;
     }
     let charsInThisRecord = isUnicode ? Math.floor(remain / 2) : remain;
     charsInThisRecord = Math.min(charsInThisRecord, charsRemaining);
     if (charsInThisRecord === 0) {
-      stream.nextRecord();
-      isUnicode = stream.encodingFlag ? (stream.encodingFlag & 0x01) === 0x01 : isUnicode;
+      const flag = stream.nextRecordForStringContinuation();
+      isUnicode = (flag & 0x01) === 0x01;
       continue;
     }
     if (isUnicode) {
