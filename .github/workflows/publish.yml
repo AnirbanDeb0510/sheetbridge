@@ -1,23 +1,25 @@
-name: Publish to npm
+name: Publish Package
 
 on:
   push:
     tags:
       - 'v*'
 
+permissions:
+  id-token: write
+  contents: read
+
 jobs:
   publish:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      id-token: write
     steps:
-      - uses: actions/checkout@v4.2.2
+      - uses: actions/checkout@v4
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4.3.0
+        uses: actions/setup-node@v4
         with:
           node-version: '20.x'
+          registry-url: 'https://registry.npmjs.org'
           cache: 'npm'
 
       - name: Install dependencies
@@ -52,7 +54,7 @@ jobs:
             exit 1
           fi
 
-      - name: Publish preflight (trusted publishing)
+      - name: Publish preflight
         shell: bash
         run: |
           set -euo pipefail
@@ -60,8 +62,18 @@ jobs:
           npm --version
           npm view "$PKG_NAME" name version --json
 
+      - name: Trusted publishing diagnostics
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "Repository: ${GITHUB_REPOSITORY}"
+          echo "Workflow ref: ${GITHUB_WORKFLOW_REF}"
+          echo "Tag ref: ${GITHUB_REF}"
+          if [[ -z "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ]]; then
+            echo "OIDC token endpoint is unavailable. Check workflow permissions: id-token: write"
+            exit 1
+          fi
+
       - name: Publish to npm (trusted publishing)
         shell: bash
-        env:
-          NODE_AUTH_TOKEN: ''
-        run: npm publish --provenance --access public
+        run: npm publish
