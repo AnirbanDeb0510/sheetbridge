@@ -274,7 +274,7 @@ describe('Parser integration (fixtures)', () => {
     expect(result.metadata.sheetCount).toBe(2);
     expect(result.sheets[0].name).toBe('People');
     expect(result.sheets[1].name).toBe('Metrics');
-    expect(result.sheets[0].data).toHaveLength(2);
+    expect(result.sheets[0].data).toHaveLength(9);
 
     const firstRow = result.sheets[0].data[0] as Record<string, unknown>;
     expect(firstRow.name).toBe('Alice');
@@ -282,7 +282,25 @@ describe('Parser integration (fixtures)', () => {
     expect(firstRow.ratio).toBe(0.5);
     expect(firstRow.birthDate).toBeInstanceOf(Date);
     expect(firstRow.loginTime).toBeInstanceOf(Date);
-    expect(firstRow.active).toBe(1);
+    expect(firstRow.active).toBe(true);
+    expect(firstRow.balance).toBe(1234.56);
+    expect(firstRow.notes).toContain('trigger SST and CONTINUE records');
+    expect(firstRow.code).toBe(101);
+
+    const firstRowKeys = Object.keys(firstRow);
+    expect(firstRowKeys).toHaveLength(10);
+    expect(firstRowKeys).toEqual([
+      'name',
+      'age',
+      'ratio',
+      'birthDate',
+      'loginTime',
+      'active',
+      'balance',
+      'notes',
+      'status',
+      'code',
+    ]);
   });
 
   it('reads a single XLS sheet by name and supports column mapping', async () => {
@@ -316,6 +334,50 @@ describe('Parser integration (fixtures)', () => {
         sheet: 'MissingXlsSheet',
       })
     ).rejects.toThrow('Sheet named "MissingXlsSheet" was not found');
+  });
+
+  it('parses complex XLS fixture with sparse wide and instruction sheets', async () => {
+    const file = readFixtureAsFile('sample.complex.xls', 'application/vnd.ms-excel');
+
+    const result = await parseFile(file, {
+      header: false,
+      trim: true,
+    });
+
+    expect(result.metadata.format).toBe('xls');
+    expect(result.metadata.sheetCount).toBe(4);
+    expect(result.sheets.map((sheet) => sheet.name)).toEqual([
+      'Sheet1_Data',
+      'Sheet2_Wide',
+      'Sheet3_Instructions',
+      'Sheet4_Notes',
+    ]);
+
+    expect(result.sheets[0].data).toHaveLength(15);
+    expect(result.sheets[1].data).toHaveLength(15);
+
+    const wideHeader = result.sheets[1].data[0] as Array<string | number | boolean | Date | null>;
+    expect(Array.isArray(wideHeader)).toBe(true);
+    expect(wideHeader).toHaveLength(96);
+    expect(wideHeader[0]).toBe('c1');
+    expect(wideHeader[95]).toBe('c96');
+
+    const wideFirstDataRow = result.sheets[1].data[1] as Array<
+      string | number | boolean | Date | null
+    >;
+    const nullCount = wideFirstDataRow.filter((value) => value === null).length;
+    expect(nullCount).toBeGreaterThan(40);
+    expect(wideFirstDataRow.some((value) => typeof value === 'string')).toBe(true);
+    expect(wideFirstDataRow.some((value) => typeof value === 'number')).toBe(true);
+
+    const instructionRows = result.sheets[2].data as Array<
+      Array<string | number | boolean | Date | null>
+    >;
+    const flattenedInstructionValues = instructionRows
+      .flat()
+      .filter((value) => typeof value === 'string') as string[];
+    expect(flattenedInstructionValues.length).toBeGreaterThan(3);
+    expect(flattenedInstructionValues.some((value) => value.length > 80)).toBe(true);
   });
 
   it('throws a clear error for malformed XLS files', async () => {

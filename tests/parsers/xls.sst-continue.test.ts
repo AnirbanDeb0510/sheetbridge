@@ -50,7 +50,62 @@ describe('XLS SST/CONTINUE shared string edge cases', () => {
     const sstRecord = { id: 0xfc, payload: new Uint8Array([...sstHeader, ...sstPayload]) };
     const continueRecord = { id: 0x3c, payload: continuePayload };
     expect(() => parseSstStringsFromRecords([sstRecord, continueRecord], 0)).toThrow(
-      'Unexpected end of SST/CONTINUE records while reading string'
+      'CONTINUE record is missing string continuation flag byte'
     );
+  });
+
+  it('parses CONTINUE payload for rich-text runs without consuming a string flag byte', () => {
+    // String: "A"
+    // flags=0x08 (rich-text), richTextRunCount=1
+    // The char data ends in SST payload and CONTINUE holds only rich-text run bytes.
+    // In this case CONTINUE does not start with a string encoding flag.
+    const sstHeader = createSstHeader(1, 1);
+    const sstPayload = new Uint8Array([
+      1,
+      0,
+      0x08,
+      1,
+      0, // richTextRunCount = 1
+      0x41, // "A"
+    ]);
+    const continuePayload = new Uint8Array([
+      0,
+      0,
+      0,
+      0, // one rich-text run (4 bytes)
+    ]);
+
+    const sstRecord = { id: 0xfc, payload: new Uint8Array([...sstHeader, ...sstPayload]) };
+    const continueRecord = { id: 0x3c, payload: continuePayload };
+
+    const { strings } = parseSstStringsFromRecords([sstRecord, continueRecord], 0);
+    expect(strings).toEqual(['A']);
+  });
+
+  it('parses chained CONTINUE records with encoding flips and trailing rich/phonetic blocks', () => {
+    // String: "ABCDEF"
+    // flags=0x0C => compressed start + rich-text + phonetic
+    // richTextRunCount=1, phoneticSize=6
+    // Split character data across multiple CONTINUE records with encoding transitions:
+    //   SST: "AB" (compressed)
+    //   CONTINUE#1: [01] + "CD" (unicode)
+    //   CONTINUE#2: [00] + "EF" (compressed) + first 2 bytes of rich-text runs
+    //   CONTINUE#3: remaining rich-text bytes + full phonetic block (no string flag byte)
+    const sstHeader = createSstHeader(1, 1);
+    const sstPayload = new Uint8Array([6, 0, 0x0c, 1, 0, 6, 0, 0, 0, 0x41, 0x42]);
+    const continuePayload1 = new Uint8Array([0x01, 0x43, 0x00, 0x44, 0x00]);
+    const continuePayload2 = new Uint8Array([0x00, 0x45, 0x46, 0xaa, 0xbb]);
+    const continuePayload3 = new Uint8Array([0xcc, 0xdd, 1, 2, 3, 4, 5, 6]);
+
+    const sstRecord = { id: 0xfc, payload: new Uint8Array([...sstHeader, ...sstPayload]) };
+    const continueRecord1 = { id: 0x3c, payload: continuePayload1 };
+    const continueRecord2 = { id: 0x3c, payload: continuePayload2 };
+    const continueRecord3 = { id: 0x3c, payload: continuePayload3 };
+
+    const { strings } = parseSstStringsFromRecords(
+      [sstRecord, continueRecord1, continueRecord2, continueRecord3],
+      0
+    );
+    expect(strings).toEqual(['ABCDEF']);
   });
 });
